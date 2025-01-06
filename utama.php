@@ -8,38 +8,98 @@ if(!isset($_SESSION['username'])) {
     exit();
 }
 
+// Fungsi untuk menampilkan pesan kesalahan
+function tampilkanPesan($pesan) {
+    echo "<div style='color: red; text-align: center; margin: 20px 0;'>$pesan</div>";
+}
+
 // Proses Edit
 if(isset($_POST['edit'])) {
-    $akun_id = $_POST['akun_id'];
-    $username = $_POST['username'];
-    $password = $_POST['password'];
-    $email = $_POST['email'];
+    // Ambil data dari form
+    $original_akun_id = $_POST['original_akun_id']; // akun_id asli
+    $new_akun_id = trim($_POST['akun_id']);
+    $username = trim($_POST['username']);
+    $password = trim($_POST['password']);
+    $email = trim($_POST['email']);
     
-    $query = "UPDATE akun SET username='$username', password='$password', email='$email' WHERE akun_id='$akun_id'";
-    mysqli_query($koneksi, $query);
-    header("Location: utama.php");
+    // Validasi input
+    if(empty($new_akun_id) || empty($username) || empty($password) || empty($email)) {
+        tampilkanPesan("Semua field harus diisi.");
+    } else {
+        // Optional: Hash password jika diperlukan
+        // $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+        $hashed_password = $password; // Ganti dengan $hashed_password jika menggunakan hashing
+        
+        // Gunakan prepared statements untuk UPDATE
+        $stmt = $koneksi->prepare("UPDATE akun SET akun_id = ?, username = ?, password = ?, email = ? WHERE akun_id = ?");
+        if ($stmt) {
+            $stmt->bind_param("sssss", $new_akun_id, $username, $hashed_password, $email, $original_akun_id);
+            if($stmt->execute()) {
+                // Jika akun yang diupdate adalah akun yang sedang login, update session
+                if($original_akun_id === $_SESSION['akun_id']) {
+                    $_SESSION['akun_id'] = $new_akun_id;
+                    $_SESSION['username'] = $username;
+                    $_SESSION['email'] = $email;
+                }
+                $stmt->close();
+                header("Location: utama.php");
+                exit();
+            } else {
+                tampilkanPesan("Gagal memperbarui data: " . $stmt->error);
+            }
+        } else {
+            tampilkanPesan("Terjadi kesalahan: " . $koneksi->error);
+        }
+    }
 }
 
 // Proses Hapus
 if(isset($_GET['hapus'])) {
     $akun_id = $_GET['hapus'];
-    $query = "DELETE FROM akun WHERE akun_id='$akun_id'";
-    mysqli_query($koneksi, $query);
-    header("Location: utama.php");
+    
+    // Gunakan prepared statements untuk DELETE
+    $stmt = $koneksi->prepare("DELETE FROM akun WHERE akun_id = ?");
+    if ($stmt) {
+        $stmt->bind_param("s", $akun_id);
+        if($stmt->execute()) {
+            $stmt->close();
+            header("Location: utama.php");
+            exit();
+        } else {
+            tampilkanPesan("Gagal menghapus data: " . $stmt->error);
+        }
+    } else {
+        tampilkanPesan("Terjadi kesalahan: " . $koneksi->error);
+    }
 }
 
 // Form Edit
 if(isset($_GET['edit'])) {
     $akun_id = $_GET['edit'];
-    $query = "SELECT * FROM akun WHERE akun_id='$akun_id'";
-    $result = mysqli_query($koneksi, $query);
-    $data = mysqli_fetch_assoc($result);
+    
+    // Gunakan prepared statements untuk SELECT
+    $stmt = $koneksi->prepare("SELECT * FROM akun WHERE akun_id = ?");
+    if ($stmt) {
+        $stmt->bind_param("s", $akun_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if($result->num_rows === 0) {
+            tampilkanPesan("Data tidak ditemukan.");
+            exit();
+        }
+        $data = $result->fetch_assoc();
+        $stmt->close();
+    } else {
+        tampilkanPesan("Terjadi kesalahan: " . $koneksi->error);
+        exit();
+    }
     ?>
     <!DOCTYPE html>
     <html>
     <head>
         <title>Form Edit</title>
         <style>
+            /* CSS yang sama seperti sebelumnya */
             body {
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
                 margin: 0;
@@ -114,21 +174,24 @@ if(isset($_GET['edit'])) {
     <body>
         <h2>FORM EDIT</h2>
         <form method="POST">
-            <input type="hidden" name="akun_id" value="<?php echo $data['akun_id']; ?>">
+            <!-- Field tersembunyi untuk akun_id asli -->
+            <input type="hidden" name="original_akun_id" value="<?php echo htmlspecialchars($data['akun_id']); ?>">
+            
             <div class="form-group">
-                <label>akun id: <?php echo $data['akun_id']; ?></label>
+                <label>akun id:</label>
+                <input type="text" name="akun_id" value="<?php echo htmlspecialchars($data['akun_id']); ?>" required>
             </div>
             <div class="form-group">
                 <label>username:</label>
-                <input type="text" name="username" value="<?php echo $data['username']; ?>">
+                <input type="text" name="username" value="<?php echo htmlspecialchars($data['username']); ?>" required>
             </div>
             <div class="form-group">
                 <label>password:</label>
-                <input type="password" name="password" value="<?php echo $data['password']; ?>">
+                <input type="password" name="password" value="<?php echo htmlspecialchars($data['password']); ?>" required>
             </div>
             <div class="form-group">
                 <label>email:</label>
-                <input type="email" name="email" value="<?php echo $data['email']; ?>">
+                <input type="email" name="email" value="<?php echo htmlspecialchars($data['email']); ?>" required>
             </div>
             <div class="form-group">
                 <input type="submit" name="edit" value="Edit">
@@ -140,12 +203,12 @@ if(isset($_GET['edit'])) {
     exit();
 }
 ?>
-
 <!DOCTYPE html>
 <html>
 <head>
     <title>Halaman Utama</title>
     <style>
+        /* CSS yang sama seperti sebelumnya */
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
@@ -265,9 +328,9 @@ if(isset($_GET['edit'])) {
 
     <div class="info-section">
         <h2>INFORMASI AKUN AKTIF LOGIN</h2>
-        <p>akun id: <?php echo $_SESSION['akun_id']; ?></p>
-        <p>username: <?php echo $_SESSION['username']; ?></p>
-        <p>email: <?php echo $_SESSION['email']; ?></p>
+        <p>akun id: <?php echo htmlspecialchars($_SESSION['akun_id']); ?></p>
+        <p>username: <?php echo htmlspecialchars($_SESSION['username']); ?></p>
+        <p>email: <?php echo htmlspecialchars($_SESSION['email']); ?></p>
     </div>
 
     <div class="data-section">
@@ -280,18 +343,23 @@ if(isset($_GET['edit'])) {
                 <th>AKSI</th>
             </tr>
             <?php
+            // Gunakan prepared statements untuk SELECT semua akun
             $query = "SELECT * FROM akun";
             $result = mysqli_query($koneksi, $query);
-            while($row = mysqli_fetch_assoc($result)) {
-                echo "<tr>";
-                echo "<td>".$row['akun_id']."</td>";
-                echo "<td>".$row['username']."</td>";
-                echo "<td>".$row['email']."</td>";
-                echo "<td class='action-links'>
-                        <a href='?edit=".$row['akun_id']."'>Edit</a> |
-                        <a href='?hapus=".$row['akun_id']."' onclick='return confirm(\"Yakin ingin menghapus?\")'>Hapus</a>
-                      </td>";
-                echo "</tr>";
+            if(!$result) {
+                echo "<tr><td colspan='4'>Terjadi kesalahan saat mengambil data: " . mysqli_error($koneksi) . "</td></tr>";
+            } else {
+                while($row = mysqli_fetch_assoc($result)) {
+                    echo "<tr>";
+                    echo "<td>" . htmlspecialchars($row['akun_id']) . "</td>";
+                    echo "<td>" . htmlspecialchars($row['username']) . "</td>";
+                    echo "<td>" . htmlspecialchars($row['email']) . "</td>";
+                    echo "<td class='action-links'>
+                            <a href='?edit=" . urlencode($row['akun_id']) . "'>Edit</a> |
+                            <a href='?hapus=" . urlencode($row['akun_id']) . "' onclick='return confirm(\"Yakin ingin menghapus?\")'>Hapus</a>
+                          </td>";
+                    echo "</tr>";
+                }
             }
             ?>
         </table>
